@@ -1,2 +1,3 @@
-# cs4100-final-project
-Repository for final group project in CS 4100 fall 2024
+This is our README, which maybe we will fill out at some point
+
+I'm going to commit this as a test
