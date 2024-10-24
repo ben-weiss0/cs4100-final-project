@@ -280,7 +280,6 @@ while run:
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            export_window()
             run = False
             break
 
