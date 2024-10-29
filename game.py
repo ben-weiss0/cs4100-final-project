@@ -1,8 +1,9 @@
 import pygame
 import time
 import math
-from utils import rotate_center, scale_image, blit_rotate_center, blit_text_center
-from AI import Agent
+from utils import *
+from PIL import Image
+import numpy as np
 
 pygame.font.init()
 
@@ -133,6 +134,8 @@ class ComputerCar(AbstractCar):
         self.path = path
         self.current_point = 0
         self.vel = max_vel
+        self.state = None
+        self.moves = [0, 1, 2, 3]
 
     def draw_points(self, win):
         for point in self.path:
@@ -171,18 +174,38 @@ class ComputerCar(AbstractCar):
         if rect.collidepoint(*target):
             self.current_point += 1
 
-    def move(self):
-        if self.current_point >= len(self.path):
-            return
+    def get_state(self):
+        utils.export_window()
+        img = Image.open('state.png', 'r')
+        self.state = np.array(img)
 
-        self.calculate_angle()
-        self.update_path_point()
-        super().move()
+    def move_forward(self):
+        super()
+
+    def move_backward(self):
+        super()
+
+    def rotate_left(self):
+        super()
+
+    def rotate_right(self):
+        super()
 
     def next_level(self, level):
         self.reset()
         self.vel = self.max_vel + (level - 1) * 0.2
         self.current_point = 0
+
+    def execute(self):
+        action = np.random.choice(self.moves)
+        if action == 0:
+            self.move_forward()
+        if action == 1:
+            self.move_backward()
+        if action == 2:
+            self.rotate_left()
+        if action == 3:
+            self.rotate_right()
 
 
 def draw(win, images, player_car, computer_car, game_info):
@@ -255,8 +278,7 @@ clock = pygame.time.Clock()
 images = [(GRASS, (0, 0)), (TRACK, (0, 0)),
           (FINISH, FINISH_POSITION), (TRACK_BORDER, (0, 0))]
 player_car = PlayerCar(4, 4)
-ai = Agent(player_car)
-computer_car = ComputerCar(2, 4, PATH)
+computer_car = ComputerCar(4, 4)
 game_info = GameInfo()
 
 while run:
@@ -282,7 +304,7 @@ while run:
             break
 
     if game_info.started:
-        ai.execute()
+        computer_car.execute()
     computer_car.move()
 
     handle_collision(player_car, computer_car, game_info)
