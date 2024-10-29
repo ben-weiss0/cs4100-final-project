@@ -2,6 +2,7 @@ import pygame
 import time
 import math
 from utils import rotate_center, scale_image, blit_rotate_center, blit_text_center
+import AI
 
 pygame.font.init()
 
@@ -258,6 +259,7 @@ clock = pygame.time.Clock()
 images = [(GRASS, (0, 0)), (TRACK, (0, 0)),
           (FINISH, FINISH_POSITION), (TRACK_BORDER, (0, 0))]
 player_car = PlayerCar(4, 4)
+ai = AI(player_car)
 computer_car = ComputerCar(2, 4, PATH)
 game_info = GameInfo()
 
@@ -283,7 +285,8 @@ while run:
             run = False
             break
 
-    move_player(player_car)
+    if game_info.started:
+        ai.execute()
     computer_car.move()
 
     handle_collision(player_car, computer_car, game_info)
