@@ -2,7 +2,7 @@ import pygame
 import time
 import math
 from utils import rotate_center, scale_image, blit_rotate_center, blit_text_center
-import AI
+from AI import Agent
 
 pygame.font.init()
 
@@ -250,16 +250,12 @@ def handle_collision(player_car, computer_car, game_info):
             computer_car.next_level(game_info.level)
 
 
-def export_window():
-    pygame.image.save(WIN, 'state.png')
-
-
 run = True
 clock = pygame.time.Clock()
 images = [(GRASS, (0, 0)), (TRACK, (0, 0)),
           (FINISH, FINISH_POSITION), (TRACK_BORDER, (0, 0))]
 player_car = PlayerCar(4, 4)
-ai = AI(player_car)
+ai = Agent(player_car)
 computer_car = ComputerCar(2, 4, PATH)
 game_info = GameInfo()
 

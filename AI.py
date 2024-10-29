@@ -1,9 +1,9 @@
-import game
+import utils
 from PIL import Image
 import numpy as np
 
 
-class AI:
+class Agent:
 
     def __init__(self, car):
         self.state = None
@@ -11,7 +11,7 @@ class AI:
         self.car = car
 
     def get_state(self):
-        game.export_window()
+        utils.export_window()
         img = Image.open('state.png', 'r')
         self.state = np.array(img)
 
