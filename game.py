@@ -145,51 +145,22 @@ class ComputerCar(AbstractCar):
         super().draw(win)
         # self.draw_points(win)
 
-    def calculate_angle(self):
-        target_x, target_y = self.path[self.current_point]
-        x_diff = target_x - self.x
-        y_diff = target_y - self.y
-
-        if y_diff == 0:
-            desired_radian_angle = math.pi / 2
-        else:
-            desired_radian_angle = math.atan(x_diff / y_diff)
-
-        if target_y > self.y:
-            desired_radian_angle += math.pi
-
-        difference_in_angle = self.angle - math.degrees(desired_radian_angle)
-        if difference_in_angle >= 180:
-            difference_in_angle -= 360
-
-        if difference_in_angle > 0:
-            self.angle -= min(self.rotation_vel, abs(difference_in_angle))
-        else:
-            self.angle += min(self.rotation_vel, abs(difference_in_angle))
-
-    def update_path_point(self):
-        target = self.path[self.current_point]
-        rect = pygame.Rect(
-            self.x, self.y, self.img.get_width(), self.img.get_height())
-        if rect.collidepoint(*target):
-            self.current_point += 1
-
     def get_state(self):
-        utils.export_window()
+        export_window()
         img = Image.open('state.png', 'r')
         self.state = np.array(img)
 
     def move_forward(self):
-        super()
+        super().move_forward()
 
     def move_backward(self):
-        super()
+        super().move_backward()
 
     def rotate_left(self):
-        super()
+        super().rotate(left=True)
 
     def rotate_right(self):
-        super()
+        super().rotate(left=True)
 
     def next_level(self, level):
         self.reset()
@@ -252,6 +223,10 @@ def handle_collision(player_car, computer_car, game_info):
     if player_car.collide(TRACK_BORDER_MASK) != None:
         player_car.bounce()
 
+    if computer_car.collide(TRACK_BORDER_MASK) != None:
+        pygame.quit()
+
+
     computer_finish_poi_collide = computer_car.collide(
         FINISH_MASK, *FINISH_POSITION)
     if computer_finish_poi_collide != None:
@@ -303,9 +278,7 @@ while run:
             run = False
             break
 
-    if game_info.started:
-        computer_car.execute()
-    computer_car.move()
+    computer_car.execute()
 
     handle_collision(player_car, computer_car, game_info)
 
