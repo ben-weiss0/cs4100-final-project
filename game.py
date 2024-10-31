@@ -72,6 +72,7 @@ class GameInfo:
     def start_level(self):
         self.started = True
         self.level_start_time = time.time()
+        self.dqn_learning()
 
     def get_level_time(self):
         if not self.started:
@@ -178,7 +179,7 @@ class ComputerCar(AbstractCar):
         super().rotate(left=True)
 
     def rotate_right(self):
-        super().rotate(left=True)
+        super().rotate(right=True)
 
     def next_level(self, level):
         self.reset()
