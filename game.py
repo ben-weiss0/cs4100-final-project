@@ -163,7 +163,8 @@ class ComputerCar(AbstractCar):
         # self.draw_points(win)
 
     def get_state(self):
-        export_window()
+        # TODO: Reduce state down to small area around car
+        pygame.image.save(WIN, 'state.png')
         img = Image.open('state.png', 'r')
         self.state = np.array(img)
 
@@ -185,6 +186,8 @@ class ComputerCar(AbstractCar):
         self.current_point = 0
 
     def execute(self):
+        reward = 0
+        done = False
         action = np.random.choice(self.moves)
         if action == 0:
             self.move_forward()
@@ -194,6 +197,14 @@ class ComputerCar(AbstractCar):
             self.rotate_left()
         if action == 3:
             self.rotate_right()
+        if computer_car.collide(TRACK_BORDER_MASK) is not None:
+            reward = -5000
+        elif computer_car.collide(
+                FINISH_MASK, *FINISH_POSITION) is not None:
+            reward = 10000
+            done = True
+        self.get_state()
+        return self.state, reward, done
 
 
 def draw(win, images, player_car, computer_car, game_info):
@@ -239,10 +250,6 @@ def move_player(player_car):
 def handle_collision(player_car, computer_car, game_info):
     if player_car.collide(TRACK_BORDER_MASK) != None:
         player_car.bounce()
-
-    if computer_car.collide(TRACK_BORDER_MASK) != None:
-        pygame.quit()
-
 
     computer_finish_poi_collide = computer_car.collide(
         FINISH_MASK, *FINISH_POSITION)
@@ -295,7 +302,7 @@ while run:
             run = False
             break
 
-    computer_car.execute()
+    obs, reward, done = computer_car.execute()
 
     handle_collision(player_car, computer_car, game_info)
 
