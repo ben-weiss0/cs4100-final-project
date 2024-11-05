@@ -4,6 +4,7 @@ import math
 from utils import *
 from PIL import Image
 import numpy as np
+import torch.nn as nn
 
 pygame.font.init()
 
@@ -32,6 +33,21 @@ PATH = [(175, 119), (110, 70), (56, 133), (70, 481), (318, 731), (404, 680), (41
         (734, 399), (611, 357), (409, 343), (433, 257), (697, 258), (738, 123), (581, 71), (303, 78), (275, 377),
         (176, 388), (178, 260)]
 
+class DQN(nn.Module):
+    def __init__(self, in_channels, num_actions):
+        super(DQN, self).__init__()
+
+        # Convolutional Layers
+        self.conv1 = nn.Conv2d(in_channels = in_channels, out_channels = 32, kernel_size=8, stride=4)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
+
+        self.fc1 = nn.Linear(in_features=7*7*64, out_features=512)
+        self.fc2 = nn.Linear(in_features=512, out_features=num_actions)
+
+        # no clue what this does
+        # self.relu = nn.ReLU()
+
 
 class GameInfo:
     LEVELS = 10
@@ -56,6 +72,7 @@ class GameInfo:
     def start_level(self):
         self.started = True
         self.level_start_time = time.time()
+        self.dqn_learning()
 
     def get_level_time(self):
         if not self.started:
@@ -136,6 +153,7 @@ class ComputerCar(AbstractCar):
         self.vel = max_vel
         self.state = None
         self.moves = [0, 1, 2, 3]
+        self.neural_network = DQN(in_channels=4000, num_actions=4)
 
     def draw_points(self, win):
         for point in self.path:
@@ -161,7 +179,7 @@ class ComputerCar(AbstractCar):
         super().rotate(left=True)
 
     def rotate_right(self):
-        super().rotate(left=True)
+        super().rotate(right=True)
 
     def next_level(self, level):
         self.reset()
