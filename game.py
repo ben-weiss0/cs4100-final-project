@@ -4,6 +4,7 @@ import math
 from utils import *
 from PIL import Image
 import numpy as np
+import pickle
 
 pygame.font.init()
 
@@ -136,6 +137,22 @@ class ComputerCar(AbstractCar):
         self.vel = max_vel
         self.state = None
         self.moves = [0, 1, 2, 3]
+        self.x, self.y = self.START_POS
+
+    def update_position(self):
+        """
+        Update the x and y coordinates of the computer car based on its current velocity and angle.
+        """
+        radians = math.radians(self.angle)
+        dx = math.cos(radians) * self.vel
+        dy = math.sin(radians) * self.vel
+
+        self.x += dx
+        self.y -= dy
+
+        # Ensure car stays within screen bounds
+        self.x = max(0, min(self.x, WIDTH))
+        self.y = max(0, min(self.y, HEIGHT))
 
     def draw_points(self, win):
         for point in self.path:
@@ -146,10 +163,22 @@ class ComputerCar(AbstractCar):
         # self.draw_points(win)
 
     def get_state(self):
-        # TODO: Reduce state down to small area around car
         pygame.image.save(WIN, 'state.png')
         img = Image.open('state.png', 'r')
-        self.state = np.array(img)
+        full_state = np.array(img)
+
+        car_x, car_y = int(self.x), int(self.y)
+
+        start_x = max(0, car_x - 15)
+        end_x = min(full_state.shape[1], car_x + 15)
+        start_y = max(0, car_y - 15)
+        end_y = min(full_state.shape[0], car_y + 15)
+
+        cropped_state = full_state[start_y:end_y, start_x:end_x]
+
+        quantized_state = np.round(cropped_state / 10).astype(int)
+
+        self.state = tuple(quantized_state.flatten())
 
     def move_forward(self):
         super().move_forward()
@@ -168,10 +197,9 @@ class ComputerCar(AbstractCar):
         self.vel = self.max_vel + (level - 1) * 0.2
         self.current_point = 0
 
-    def execute(self):
+    def execute(self, action):
         reward = 0
         done = False
-        action = np.random.choice(self.moves)
         if action == 0:
             self.move_forward()
         if action == 1:
@@ -180,9 +208,9 @@ class ComputerCar(AbstractCar):
             self.rotate_left()
         if action == 3:
             self.rotate_right()
-        if computer_car.collide(TRACK_BORDER_MASK) is not None:
+        if self.collide(TRACK_BORDER_MASK) is not None:
             reward = -5000
-        elif computer_car.collide(
+        elif self.collide(
                 FINISH_MASK, *FINISH_POSITION) is not None:
             reward = 10000
             done = True
@@ -255,45 +283,118 @@ def handle_collision(player_car, computer_car, game_info):
             computer_car.next_level(game_info.level)
 
 
-run = True
-clock = pygame.time.Clock()
-images = [(GRASS, (0, 0)), (TRACK, (0, 0)),
-          (FINISH, FINISH_POSITION), (TRACK_BORDER, (0, 0))]
-player_car = PlayerCar(4, 4)
-computer_car = ComputerCar(4, 4)
-game_info = GameInfo()
+class Game:
 
-while run:
-    clock.tick(FPS)
+    def __init__(self):
+        self.run = True
+        self.clock = pygame.time.Clock()
+        self.images = [(GRASS, (0, 0)), (TRACK, (0, 0)),
+                       (FINISH, FINISH_POSITION), (TRACK_BORDER, (0, 0))]
+        self.player_car = PlayerCar(4, 4)
+        self.computer_car = ComputerCar(4, 4)
+        self.game_info = GameInfo()
 
-    draw(WIN, images, player_car, computer_car, game_info)
+    # def run(self):
+    #     while self.run:
+    #         self.clock.tick(FPS)
+    #
+    #         draw(WIN, self.images, self.player_car, self.computer_car, self.game_info)
+    #
+    #         while not self.game_info.started:
+    #             blit_text_center(
+    #                 WIN, MAIN_FONT, f"Press any key to start level {self.game_info.level}!")
+    #             pygame.display.update()
+    #             for event in pygame.event.get():
+    #                 if event.type == pygame.QUIT:
+    #                     pygame.quit()
+    #                     break
+    #
+    #                 if event.type == pygame.KEYDOWN:
+    #                     self.game_info.start_level()
+    #
+    #         for event in pygame.event.get():
+    #             if event.type == pygame.QUIT:
+    #                 run = False
+    #                 break
+    #
+    #         handle_collision(self.player_car, self.computer_car, self.game_info)
+    #
+    #         if game_info.game_finished():
+    #             blit_text_center(WIN, MAIN_FONT, "You won the game!")
+    #             pygame.time.wait(5000)
+    #             game_info.reset()
+    #             player_car.reset()
+    #             computer_car.reset()
+    #
+    #     pygame.quit()
 
-    while not game_info.started:
-        blit_text_center(
-            WIN, MAIN_FONT, f"Press any key to start level {game_info.level}!")
-        pygame.display.update()
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                break
+    def reset(self):
+        self.game_info.reset()
+        self.player_car.reset()
+        self.computer_car.reset()
+        draw(WIN, self.images, self.player_car, self.computer_car, self.game_info)
+        self.computer_car.get_state()
+        obs = self.computer_car.state
+        return obs, 0, False
 
-            if event.type == pygame.KEYDOWN:
-                game_info.start_level()
+    def step(self, action):
+        obs, reward, done = self.computer_car.execute(action)
+        return obs, reward, done
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            run = False
-            break
 
-    obs, reward, done = computer_car.execute()
+def Q_learning(num_episodes=10000, gamma=0.9, epsilon=1, decay_rate=0.999):
+    """
+    Run Q-learning algorithm for a specified number of episodes.
 
-    handle_collision(player_car, computer_car, game_info)
+    Parameters:
+    - num_episodes (int): Number of episodes to run.
+    - gamma (float): Discount factor.
+    - epsilon (float): Exploration rate.
+    - decay_rate (float): Rate at which epsilon decays. Epsilon is decayed as epsilon = epsilon * decay_rate after each episode.
 
-    if game_info.game_finished():
-        blit_text_center(WIN, MAIN_FONT, "You won the game!")
-        pygame.time.wait(5000)
-        game_info.reset()
-        player_car.reset()
-        computer_car.reset()
+    Returns:
+    - Q_table (dict): Dictionary containing the Q-values for each state-action pair.
+    """
 
-pygame.quit()
+    Q_table = {}
+    game = Game()
+
+    # of updates
+    updates = np.zeros((100000000, 4))
+
+    for episode in range(num_episodes):
+        obs_prev, reward, done = game.reset()
+        while not done:
+            state = hash(obs_prev)
+            if Q_table.get(state) is None:
+                Q_table[state] = np.zeros(6)
+            if np.random.random() < epsilon:
+                action = np.random.choice(range(6))
+            else:
+                action = np.argmax(Q_table[pd.util.hash_array(obs_prev)])
+            obs_next, reward, done = game.step(action)
+
+            next_state = hash(obs_next)
+            if Q_table.get(next_state) is None:
+                Q_table[next_state] = np.zeros(6)
+            n = 1 / (1 + updates[state][action])
+            qminus1 = Q_table[state][action]
+            if Q_table.get(next_state) is None or done:
+                V_next = 0
+            else:
+                V_next = max(Q_table.get(next_state))
+            Q_table[state][action] = (1 - n) * qminus1 + n * (
+                    reward + gamma * V_next)
+            updates[state][action] += 1
+            obs_prev = obs_next
+        epsilon = epsilon * decay_rate
+    return Q_table
+
+
+decay_rate = 0.999997
+
+Q_table = Q_learning(num_episodes=1000000, gamma=0.9, epsilon=1, decay_rate=decay_rate)  # Run Q-learning
+
+# Save the Q-table dict to a file
+with open('Q_table.pickle', 'wb') as handle:
+    pickle.dump(Q_table, handle, protocol=pickle.HIGHEST_PROTOCOL)
