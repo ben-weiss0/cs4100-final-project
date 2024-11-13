@@ -12,7 +12,11 @@ from gym.utils import colorize, seeding, EzPickle
 import pyglet
 from pyglet import gl
 from shapely.geometry import Point, Polygon
-
+import torch
+import torch.nn as nn
+from collections import deque
+import random
+import torch.optim as optim
 
 # Easiest continuous control task to learn from pixels, a top-down racing environment.
 # Discrete control is reasonable in this environment as well, on/off discretization is
@@ -41,7 +45,7 @@ from shapely.geometry import Point, Polygon
 #
 # Created by Oleg Klimov. Licensed on the same terms as the rest of OpenAI Gym.
 
-STATE_W = 96   # less than Atari 160x192
+STATE_W = 96
 STATE_H = 96
 VIDEO_W = 600
 VIDEO_H = 400
@@ -55,7 +59,6 @@ FPS         = 50         # Frames per second
 ZOOM        = 2.7        # Camera zoom
 ZOOM_FOLLOW = True       # Set to False for fixed view (don't use zoom)
 
-
 TRACK_DETAIL_STEP = 21/SCALE
 TRACK_TURN_RATE = 0.31
 TRACK_WIDTH = 40/SCALE
@@ -63,6 +66,22 @@ BORDER = 8/SCALE
 BORDER_MIN_COUNT = 4
 
 ROAD_COLOR = [0.4, 0.4, 0.4]
+
+# Replay memory parameters
+REPLAY_MEMORY_SIZE = 10000  # Maximum size of the replay memory
+BATCH_SIZE = 64             # Size of training batches sampled from memory
+replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
+
+# Exploration parameters
+EPSILON_START = 1.0       # Initial exploration rate
+EPSILON_END = 0.1         # Final exploration rate
+EPSILON_DECAY = 0.995     # Decay rate for exploration rate
+epsilon = EPSILON_START
+
+# Hyperparameters
+GAMMA = 0.99                 # Discount factor for future rewards
+LEARNING_RATE = 1e-4         # Learning rate for optimizer
+LOW_REWARD_THRESHOLD = -20
 
 # Specify different car colors
 CAR_COLORS = [(0.8, 0.0, 0.0), (0.0, 0.0, 0.8),
@@ -435,12 +454,6 @@ class MultiCarRacing(gym.Env, EzPickle):
         done = False
         if action is not None: # First step without action, called from reset()
             self.reward -= 0.1
-            # We actually don't want to count fuel spent, we want car to be faster.
-            # self.reward -=  10 * self.car.fuel_spent / ENGINE_POWER
-
-            # NOTE(IG): Probably not relevant. Seems not to be used anywhere. Commented it out.
-            # self.cars[0].fuel_spent = 0.0
-
             step_reward = self.reward - self.prev_reward
 
             # Add penalty for driving backward
@@ -674,9 +687,47 @@ class MultiCarRacing(gym.Env, EzPickle):
                                           W-50, 30)),
                                  ('c3B', (0, 0, 255) * 3))
 
+class DQN(nn.Module):
+    def __init__(self, input):
+        super(DQN, self).__init__()
+
+        # Convolutional layers
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
+        
+        # Fully connected layers
+        self.fc1 = nn.Linear(in_features=4096, out_features=512)  # Updated to 4096 based on calculation
+        self.fc2 = nn.Linear(in_features=512, out_features=3)     # Output 3 actions
+
+        # Activation function
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.relu(self.conv1(x))
+        x = self.relu(self.conv2(x))
+        x = self.relu(self.conv3(x))
+        
+        # Flatten before fully connected layers
+        x = x.view(x.size(0), -1)
+        x = self.relu(self.fc1(x))
+        output = self.fc2(x)
+        
+        # Apply Tanh for steer, Sigmoid for gas and brake
+        steer = torch.tanh(output[:, 0])  # Range between -1 and 1
+        gas = torch.sigmoid(output[:, 1])  # Range between 0 and 1
+        brake = torch.sigmoid(output[:, 2])  # Range between 0 and 1
+        
+        return torch.stack([steer, gas, brake], dim=1)
+
+# Define the model with appropriate input channels (3 for RGB) and output (3 actions for steer, gas, brake)
+dqn_model = DQN(input=3)  # Adjust input and output if necessary
 
 if __name__=="__main__":
     from pyglet.window import key
+    # Define optimizer and loss function
+    optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
+    loss_fn = nn.MSELoss()
     NUM_CARS = 2  # Supports key control of two cars, but can simulate as many as needed
 
     # Specify key controls for cars
@@ -684,6 +735,8 @@ if __name__=="__main__":
                         [key.A, key.D, key.W, key.S]]
 
     a = np.zeros((NUM_CARS,3))
+
+    # Determines what to do on key presses
     def key_press(k, mod):
         global restart, stopped, CAR_CONTROL_KEYS
         if k==0xff1b: stopped = True # Terminate on esc.
@@ -694,18 +747,15 @@ if __name__=="__main__":
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]:  a[i][0] = -1.0
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1]: a[i][0] = +1.0
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = +1.0
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = +0.8   # set 1.0 for wheels to block to zero rotation
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = +0.8
 
     def key_release(k, mod):
         global CAR_CONTROL_KEYS
-
-        # Iterate through cars and assign them control keys (mod num controllers)
         for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]  and a[i][0]==-1.0: a[i][0] = 0
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1] and a[i][0]==+1.0: a[i][0] = 0
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = 0
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = 0
-
 
     env = MultiCarRacing(NUM_CARS)
     env.render()
@@ -725,13 +775,32 @@ if __name__=="__main__":
         restart = False
         while True:
             s, r, done, info = env.step(a)
+            learning_state = env.state[0]  # Use car 0's state
+            state_tensor = torch.tensor(learning_state, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
+            
+            with torch.no_grad():
+                # Case we use best value
+                if random.random() > epsilon:
+                    action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
+                # Case we do something completely random
+                else:
+                    action_values = [random.uniform(-1, 1), random.uniform(0, 1), random.uniform(0, 1)]
+
+            # Decay epsilon if not at determined minimum
+            if epsilon > EPSILON_END:
+                epsilon *= EPSILON_DECAY
+
+            # Define a mapping for the DQN action outputs to [steer, gas, brake] values
+            a[0] = action_values
+            
+            # Process the chosen action
             total_reward += r
+            if total_reward[0] < LOW_REWARD_THRESHOLD:
+                restart = True 
+                break
             if steps % 200 == 0 or done:
                 print("\nActions: " + str.join(" ", [f"Car {x}: "+str(a[x]) for x in range(NUM_CARS)]))
                 print(f"Step {steps} Total_reward "+str(total_reward))
-                #import matplotlib.pyplot as plt
-                #plt.imshow(s)
-                #plt.savefig("test.jpeg")
             steps += 1
             isopen = env.render().all()
             if stopped or done or restart or isopen == False:
