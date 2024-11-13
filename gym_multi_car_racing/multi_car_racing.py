@@ -81,7 +81,7 @@ epsilon = EPSILON_START
 # Hyperparameters
 GAMMA = 0.99                 # Discount factor for future rewards
 LEARNING_RATE = 1e-4         # Learning rate for optimizer
-LOW_REWARD_THRESHOLD = -20
+LOW_REWARD_THRESHOLD = -10
 
 # Specify different car colors
 CAR_COLORS = [(0.8, 0.0, 0.0), (0.0, 0.0, 0.8),
@@ -724,6 +724,7 @@ class DQN(nn.Module):
 dqn_model = DQN(input=3)  # Adjust input and output if necessary
 
 if __name__=="__main__":
+    episodes_run = 0
     from pyglet.window import key
     # Define optimizer and loss function
     optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
@@ -766,43 +767,44 @@ if __name__=="__main__":
     if record_video:
         from gym.wrappers.monitor import Monitor
         env = Monitor(env, '/tmp/video-test', force=True)
-    isopen = True
-    stopped = False
-    while isopen and not stopped:
-        env.reset()
-        total_reward = np.zeros(NUM_CARS)
-        steps = 0
-        restart = False
-        while True:
-            s, r, done, info = env.step(a)
-            learning_state = env.state[0]  # Use car 0's state
-            state_tensor = torch.tensor(learning_state, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
+    for episode in range(REPLAY_MEMORY_SIZE):
+        isopen = True
+        stopped = False
+        while isopen and not stopped:
+            env.reset()
+            total_reward = np.zeros(NUM_CARS)
+            steps = 0
+            restart = False
+            while True:
+                s, r, done, info = env.step(a)
+                learning_state = env.state[0]  # Use car 0's state
+                state_tensor = torch.tensor(learning_state, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
             
-            with torch.no_grad():
-                # Case we use best value
-                if random.random() > epsilon:
-                    action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
-                # Case we do something completely random
-                else:
-                    action_values = [random.uniform(-1, 1), random.uniform(0, 1), random.uniform(0, 1)]
+                with torch.no_grad():
+                    # Case we use best value
+                    if random.random() > epsilon:
+                        action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
+                    # Case we do something completely random
+                    else:
+                        action_values = [random.uniform(-1, 1), random.uniform(0, 1), random.uniform(0, 1)]
 
-            # Decay epsilon if not at determined minimum
-            if epsilon > EPSILON_END:
-                epsilon *= EPSILON_DECAY
+                # Decay epsilon if not at determined minimum
+                if epsilon > EPSILON_END:
+                    epsilon *= EPSILON_DECAY
 
-            # Define a mapping for the DQN action outputs to [steer, gas, brake] values
-            a[0] = action_values
+                # Define a mapping for the DQN action outputs to [steer, gas, brake] values
+                a[0] = action_values
             
-            # Process the chosen action
-            total_reward += r
-            if total_reward[0] < LOW_REWARD_THRESHOLD:
-                restart = True 
-                break
-            if steps % 200 == 0 or done:
-                print("\nActions: " + str.join(" ", [f"Car {x}: "+str(a[x]) for x in range(NUM_CARS)]))
-                print(f"Step {steps} Total_reward "+str(total_reward))
-            steps += 1
-            isopen = env.render().all()
-            if stopped or done or restart or isopen == False:
-                break
-    env.close()
+                # Process the chosen action
+                total_reward += r
+                if total_reward[0] < LOW_REWARD_THRESHOLD:
+                    restart = True 
+                    break
+                if steps % 200 == 0 or done:
+                    print("\nActions: " + str.join(" ", [f"Car {x}: "+str(a[x]) for x in range(NUM_CARS)]))
+                    print(f"Step {steps} Total_reward "+str(total_reward))
+                steps += 1
+                isopen = env.render().all()
+                if stopped or done or restart or isopen == False:
+                    break
+        env.close()
