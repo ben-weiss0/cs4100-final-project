@@ -17,6 +17,9 @@ import torch.nn as nn
 from collections import deque
 import random
 import torch.optim as optim
+from pyglet.window import key
+import torch.nn.functional as F
+
 
 # Easiest continuous control task to learn from pixels, a top-down racing environment.
 # Discrete control is reasonable in this environment as well, on/off discretization is
@@ -74,7 +77,7 @@ replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
 # Exploration parameters
 EPSILON_START = 1.0       # Initial exploration rate
-EPSILON_END = 0.1         # Final exploration rate
+EPSILON_END = 0.9         # Final exploration rate
 EPSILON_DECAY = 0.995     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
@@ -723,19 +726,15 @@ class DQN(nn.Module):
 # Define the model with appropriate input channels (3 for RGB) and output (3 actions for steer, gas, brake)
 dqn_model = DQN(input=3)  # Adjust input and output if necessary
 
-if __name__=="__main__":
-    episodes_run = 0
-    from pyglet.window import key
-    # Define optimizer and loss function
-    optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
-    loss_fn = nn.MSELoss()
-    NUM_CARS = 2  # Supports key control of two cars, but can simulate as many as needed
-
+# Both will need this to run the game
+# Put here purely to reduce duplicate code
+def render(should_render):
+    NUM_CARS = 2
     # Specify key controls for cars
     CAR_CONTROL_KEYS = [[key.LEFT, key.RIGHT, key.UP, key.DOWN],
                         [key.A, key.D, key.W, key.S]]
 
-    a = np.zeros((NUM_CARS,3))
+    a = np.zeros((NUM_CARS, 3))
 
     # Determines what to do on key presses
     def key_press(k, mod):
@@ -759,6 +758,7 @@ if __name__=="__main__":
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = 0
 
     env = MultiCarRacing(NUM_CARS)
+    # Only render if this is true
     env.render()
     for viewer in env.viewer:
         viewer.window.on_key_press = key_press
@@ -767,44 +767,228 @@ if __name__=="__main__":
     if record_video:
         from gym.wrappers.monitor import Monitor
         env = Monitor(env, '/tmp/video-test', force=True)
-    for episode in range(REPLAY_MEMORY_SIZE):
-        isopen = True
-        stopped = False
-        while isopen and not stopped:
-            env.reset()
-            total_reward = np.zeros(NUM_CARS)
-            steps = 0
-            restart = False
-            while True:
-                s, r, done, info = env.step(a)
-                learning_state = env.state[0]  # Use car 0's state
-                state_tensor = torch.tensor(learning_state, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
-            
+
+# Initialize or load the DQN model
+dqn_model = DQN(input=3)
+optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
+loss_fn = nn.MSELoss()
+
+CAR_CONTROL_KEYS = [[key.LEFT, key.RIGHT, key.UP, key.DOWN],
+                        [key.A, key.D, key.W, key.S]]
+
+# Attempt to load existing model weights if present
+def load_model():
+    try:
+        dqn_model.load_state_dict(torch.load('racing_dqn_network.pth'))
+        print("Loaded existing model weights.")
+    except FileNotFoundError:
+        print("No pre-trained model found, starting fresh.")
+
+# Training function with optional rendering
+def train_model(episodes, render_during_training=False):
+    NUM_CARS = 2
+    # Specify key controls for cars
+    # CAR_CONTROL_KEYS = [[key.LEFT, key.RIGHT, key.UP, key.DOWN],
+    #                     [key.A, key.D, key.W, key.S]]
+
+    a = np.zeros((NUM_CARS, 3))
+
+    # Determines what to do on key presses
+    def key_press(k, mod):
+        global restart, stopped, CAR_CONTROL_KEYS
+        if k==0xff1b: stopped = True # Terminate on esc.
+        if k==0xff0d: restart = True # Restart on Enter.
+
+        # Iterate through cars and assign them control keys (mod num controllers)
+        for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]:  a[i][0] = -1.0
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1]: a[i][0] = +1.0
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = +1.0
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = +0.8
+
+    def key_release(k, mod):
+        global CAR_CONTROL_KEYS
+        for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]  and a[i][0]==-1.0: a[i][0] = 0
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1] and a[i][0]==+1.0: a[i][0] = 0
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = 0
+            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = 0
+
+    env = MultiCarRacing(NUM_CARS)
+    # Only render if this is true
+    env.render()
+    for viewer in env.viewer:
+        viewer.window.on_key_press = key_press
+        viewer.window.on_key_release = key_release
+    record_video = False
+    if record_video:
+        from gym.wrappers.monitor import Monitor
+        env = Monitor(env, '/tmp/video-test', force=True)
+    ###############################
+    # env = MultiCarRacing(2)  # Initialize environment with 2 cars
+    epsilon = EPSILON_START  # Reset epsilon each training
+    load_model()  # Load model if existing weights file found
+    # a = np.zeros((2, 3))
+    # render(True)
+    
+    # Main training loop
+    for episode in range(episodes):
+        state = env.reset()
+        state_tensor = torch.tensor(state[0], dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)  # Car 0 state
+        total_reward = 0
+        done = False
+        steps = 0
+        global restart
+
+        while not done:
+            # Epsilon-greedy action selection
+            if random.random() > epsilon:
                 with torch.no_grad():
-                    # Case we use best value
-                    if random.random() > epsilon:
-                        action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
-                    # Case we do something completely random
-                    else:
-                        action_values = [random.uniform(-1, 1), random.uniform(0, 1), random.uniform(0, 1)]
-
-                # Decay epsilon if not at determined minimum
-                if epsilon > EPSILON_END:
-                    epsilon *= EPSILON_DECAY
-
-                # Define a mapping for the DQN action outputs to [steer, gas, brake] values
-                a[0] = action_values
+                    action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
+            else:
+                action_values = [random.uniform(-1, 1), random.uniform(0, 1), random.uniform(0, 1)]
             
-                # Process the chosen action
-                total_reward += r
-                if total_reward[0] < LOW_REWARD_THRESHOLD:
-                    restart = True 
-                    break
-                if steps % 200 == 0 or done:
-                    print("\nActions: " + str.join(" ", [f"Car {x}: "+str(a[x]) for x in range(NUM_CARS)]))
-                    print(f"Step {steps} Total_reward "+str(total_reward))
-                steps += 1
-                isopen = env.render().all()
-                if stopped or done or restart or isopen == False:
-                    break
-        env.close()
+            # Execute action in environment
+            # Set the actions for the first car
+            a[0] = action_values
+            print(action_values)
+
+            # Pass `a` (with the first car’s actions set) to `env.step()`
+            next_state, reward, done, _ = env.step(a)
+            total_reward += reward[0]
+
+            # Prepare tensors for training
+            next_state_tensor = torch.tensor(next_state[0], dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
+            replay_memory.append((state_tensor, action_values, reward[0], next_state_tensor, done))
+            state_tensor = next_state_tensor
+
+            if total_reward < LOW_REWARD_THRESHOLD:
+                restart = True
+                break
+            
+            # Training from replay memory if enough samples are available
+            if len(replay_memory) >= BATCH_SIZE:
+                batch = random.sample(replay_memory, BATCH_SIZE)
+
+                # Unpack batch
+                state_batch = torch.cat([x[0] for x in batch])  # Shape: (BATCH_SIZE, C, H, W)
+                action_batch = torch.tensor([x[1] for x in batch], dtype=torch.long)  # Shape: (BATCH_SIZE, 3)
+                reward_batch = torch.tensor([x[2] for x in batch], dtype=torch.float32)  # Shape: (BATCH_SIZE,)
+                next_state_batch = torch.cat([x[3] for x in batch])  # Shape: (BATCH_SIZE, C, H, W)
+                done_batch = torch.tensor([x[4] for x in batch], dtype=torch.float32)  # Shape: (BATCH_SIZE,)
+
+                # Calculate target and current Q-values
+                with torch.no_grad():
+                    target_q_values = reward_batch + GAMMA * (1 - done_batch) * torch.max(dqn_model(next_state_batch), dim=1)[0]
+
+                # Select Q-values for the specific actions taken
+                # We need to ensure action_batch matches the shape of state_batch
+                current_q_values = dqn_model(state_batch).gather(1, action_batch[:, :1]).squeeze()
+
+                # Compute loss and backpropagate
+                loss = F.mse_loss(current_q_values, target_q_values)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            
+            env.render()
+            
+            # Decay epsilon for exploration
+            epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
+            steps += 1
+
+        # Save model periodically
+        if episode % 10 == 0:
+            torch.save(dqn_model.state_dict(), 'racing_dqn_network.pth')
+            print(f"Model saved at episode {episode}")
+
+    print("Training complete")
+    env.close()
+
+
+if __name__=="__main__":
+    TRAINING = True
+    episodes_run = 0
+    if TRAINING: train_model(1)
+    # Define optimizer and loss function
+    # optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
+    # loss_fn = nn.MSELoss()
+    # NUM_CARS = 2  # Supports key control of two cars, but can simulate as many as needed
+
+    # # Specify key controls for cars
+    # CAR_CONTROL_KEYS = [[key.LEFT, key.RIGHT, key.UP, key.DOWN],
+    #                     [key.A, key.D, key.W, key.S]]
+
+    # a = np.zeros((NUM_CARS, 3))
+
+    # # Determines what to do on key presses
+    # def key_press(k, mod):
+    #     global restart, stopped, CAR_CONTROL_KEYS
+    #     if k==0xff1b: stopped = True # Terminate on esc.
+    #     if k==0xff0d: restart = True # Restart on Enter.
+
+    #     # Iterate through cars and assign them control keys (mod num controllers)
+    #     for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
+    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]:  a[i][0] = -1.0
+    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1]: a[i][0] = +1.0
+    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = +1.0
+    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = +0.8
+
+    # def key_release(k, mod):
+    #     global CAR_CONTROL_KEYS
+    #     for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
+    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]  and a[i][0]==-1.0: a[i][0] = 0
+    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1] and a[i][0]==+1.0: a[i][0] = 0
+    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = 0
+    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = 0
+
+    # env = MultiCarRacing(NUM_CARS)
+    # env.render()
+    # for viewer in env.viewer:
+    #     viewer.window.on_key_press = key_press
+    #     viewer.window.on_key_release = key_release
+    # record_video = False
+    # if record_video:
+    #     from gym.wrappers.monitor import Monitor
+    #     env = Monitor(env, '/tmp/video-test', force=True)
+    # for episode in range(REPLAY_MEMORY_SIZE):
+    #     isopen = True
+    #     stopped = False
+    #     while isopen and not stopped:
+    #         env.reset()
+    #         total_reward = np.zeros(NUM_CARS)
+    #         steps = 0
+    #         restart = False
+    #         while True:
+    #             s, r, done, info = env.step(a)
+    #             learning_state = env.state[0]  # Use car 0's state
+    #             state_tensor = torch.tensor(learning_state, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
+            
+    #             with torch.no_grad():
+    #                 # Case we use best value
+    #                 if random.random() > epsilon:
+    #                     action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
+    #                 # Case we do something completely random
+    #                 else:
+    #                     action_values = [random.uniform(-1, 1), random.uniform(0, 1), random.uniform(0, 1)]
+
+    #             # Decay epsilon if not at determined minimum
+    #             if epsilon > EPSILON_END:
+    #                 epsilon *= EPSILON_DECAY
+
+    #             # Define a mapping for the DQN action outputs to [steer, gas, brake] values
+    #             a[0] = action_values
+            
+    #             # Process the chosen action
+    #             total_reward += r
+    #             if total_reward[0] < LOW_REWARD_THRESHOLD:
+    #                 restart = True 
+    #                 break
+    #             if steps % 200 == 0 or done:
+    #                 print("\nActions: " + str.join(" ", [f"Car {x}: "+str(a[x]) for x in range(NUM_CARS)]))
+    #                 print(f"Step {steps} Total_reward "+str(total_reward))
+    #             steps += 1
+    #             isopen = env.render().all()
+    #             if stopped or done or restart or isopen == False:
+    #                 break
+    #     env.close()
