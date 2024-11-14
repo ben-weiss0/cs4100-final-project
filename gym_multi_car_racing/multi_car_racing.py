@@ -905,10 +905,11 @@ def train_model(episodes, render_during_training=False):
     print("Training complete")
     env.close()
 
-
+# Main function that runs either training model or tries to win
 if __name__=="__main__":
     TRAINING = True
     episodes_run = 0
+    # Put number of traning episodes here
     if TRAINING: train_model(1)
     # Define optimizer and loss function
     # optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
