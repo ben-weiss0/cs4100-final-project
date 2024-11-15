@@ -77,14 +77,14 @@ replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
 # Exploration parameters
 EPSILON_START = 1.0       # Initial exploration rate
-EPSILON_END = 0.9         # Final exploration rate
+EPSILON_END = 0.3         # Final exploration rate
 EPSILON_DECAY = 0.995     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
 # Hyperparameters
 GAMMA = 0.99                 # Discount factor for future rewards
 LEARNING_RATE = 1e-4         # Learning rate for optimizer
-LOW_REWARD_THRESHOLD = -10
+LOW_REWARD_THRESHOLD = -25
 
 # Specify different car colors
 CAR_COLORS = [(0.8, 0.0, 0.0), (0.0, 0.0, 0.8),
@@ -846,7 +846,7 @@ def train_model(episodes, render_during_training=False):
                 with torch.no_grad():
                     action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
             else:
-                action_values = [random.uniform(-1, 1), random.uniform(0, 1), random.uniform(0, 1)]
+                action_values = [random.uniform(-1, 1), random.uniform(0, 1), 0]
             
             # Execute action in environment
             # Set the actions for the first car
@@ -910,7 +910,7 @@ if __name__=="__main__":
     TRAINING = True
     episodes_run = 0
     # Put number of traning episodes here
-    if TRAINING: train_model(1)
+    if TRAINING: train_model(3)
     # Define optimizer and loss function
     # optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
     # loss_fn = nn.MSELoss()
