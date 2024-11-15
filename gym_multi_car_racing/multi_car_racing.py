@@ -76,15 +76,15 @@ BATCH_SIZE = 64             # Size of training batches sampled from memory
 replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
 # Exploration parameters
-EPSILON_START = 1.0       # Initial exploration rate
-EPSILON_END = 0.3         # Final exploration rate
+EPSILON_START = 0.999      # Initial exploration rate
+EPSILON_END = 0.999         # Final exploration rate
 EPSILON_DECAY = 0.995     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
 # Hyperparameters
-GAMMA = 0.99                 # Discount factor for future rewards
+GAMMA = 0.9                 # Discount factor for future rewards
 LEARNING_RATE = 1e-4         # Learning rate for optimizer
-LOW_REWARD_THRESHOLD = -25
+LOW_REWARD_THRESHOLD = -10
 
 # Specify different car colors
 CAR_COLORS = [(0.8, 0.0, 0.0), (0.0, 0.0, 0.8),
@@ -845,21 +845,25 @@ def train_model(episodes, render_during_training=False):
             if random.random() > epsilon:
                 with torch.no_grad():
                     action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
+                    q_values = dqn_model(state_tensor)
+                    print("Raw Q-values:", q_values)
             else:
-                action_values = [random.uniform(-1, 1), random.uniform(0, 1), 0]
+                action_values = [random.uniform(-1, 1), random.uniform(0, 1), max(0, random.uniform(0, 1) - 0.4)]
             
             # Execute action in environment
             # Set the actions for the first car
             a[0] = action_values
             print(action_values)
+            
 
             # Pass `a` (with the first car’s actions set) to `env.step()`
             next_state, reward, done, _ = env.step(a)
             total_reward += reward[0]
+            # print(reward[0])
 
             # Prepare tensors for training
             next_state_tensor = torch.tensor(next_state[0], dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
-            replay_memory.append((state_tensor, action_values, reward[0], next_state_tensor, done))
+            replay_memory.append((state_tensor, action_values, reward[0] * 5, next_state_tensor, done))
             state_tensor = next_state_tensor
 
             if total_reward < LOW_REWARD_THRESHOLD:
@@ -887,6 +891,7 @@ def train_model(episodes, render_during_training=False):
 
                 # Compute loss and backpropagate
                 loss = F.mse_loss(current_q_values, target_q_values)
+                print("Loss:", loss)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -898,11 +903,13 @@ def train_model(episodes, render_during_training=False):
             steps += 1
 
         # Save model periodically
-        if episode % 10 == 0:
+        if episode % 2 == 0:
             torch.save(dqn_model.state_dict(), 'racing_dqn_network.pth')
             print(f"Model saved at episode {episode}")
 
     print("Training complete")
+    torch.save(dqn_model.state_dict(), 'racing_dqn_network.pth')
+    print("Model saved after final episode")
     env.close()
 
 # Main function that runs either training model or tries to win
@@ -910,7 +917,7 @@ if __name__=="__main__":
     TRAINING = True
     episodes_run = 0
     # Put number of traning episodes here
-    if TRAINING: train_model(3)
+    if TRAINING: train_model(1)
     # Define optimizer and loss function
     # optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
     # loss_fn = nn.MSELoss()
