@@ -71,20 +71,20 @@ BORDER_MIN_COUNT = 4
 ROAD_COLOR = [0.4, 0.4, 0.4]
 
 # Replay memory parameters
-REPLAY_MEMORY_SIZE = 10000  # Maximum size of the replay memory
+REPLAY_MEMORY_SIZE = 100000  # Maximum size of the replay memory
 BATCH_SIZE = 64             # Size of training batches sampled from memory
 replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
 # Exploration parameters
-EPSILON_START = 0.999      # Initial exploration rate
-EPSILON_END = 0.999         # Final exploration rate
+EPSILON_START = 0.0      # Initial exploration rate
+EPSILON_END = 0.0        # Final exploration rate
 EPSILON_DECAY = 0.995     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
 # Hyperparameters
 GAMMA = 0.9                 # Discount factor for future rewards
 LEARNING_RATE = 1e-4         # Learning rate for optimizer
-LOW_REWARD_THRESHOLD = -10
+LOW_REWARD_THRESHOLD = -5
 
 # Specify different car colors
 CAR_COLORS = [(0.8, 0.0, 0.0), (0.0, 0.0, 0.8),
@@ -787,10 +787,6 @@ def load_model():
 # Training function with optional rendering
 def train_model(episodes, render_during_training=False):
     NUM_CARS = 2
-    # Specify key controls for cars
-    # CAR_CONTROL_KEYS = [[key.LEFT, key.RIGHT, key.UP, key.DOWN],
-    #                     [key.A, key.D, key.W, key.S]]
-
     a = np.zeros((NUM_CARS, 3))
 
     # Determines what to do on key presses
@@ -863,7 +859,9 @@ def train_model(episodes, render_during_training=False):
 
             # Prepare tensors for training
             next_state_tensor = torch.tensor(next_state[0], dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
-            replay_memory.append((state_tensor, action_values, reward[0] * 5, next_state_tensor, done))
+            action_index = torch.argmax(torch.tensor(action_values)).item()
+            replay_memory.append((state_tensor, action_index, reward[0], next_state_tensor, done))
+
             state_tensor = next_state_tensor
 
             if total_reward < LOW_REWARD_THRESHOLD:
@@ -876,24 +874,43 @@ def train_model(episodes, render_during_training=False):
 
                 # Unpack batch
                 state_batch = torch.cat([x[0] for x in batch])  # Shape: (BATCH_SIZE, C, H, W)
-                action_batch = torch.tensor([x[1] for x in batch], dtype=torch.long)  # Shape: (BATCH_SIZE, 3)
-                reward_batch = torch.tensor([x[2] for x in batch], dtype=torch.float32)  # Shape: (BATCH_SIZE,)
+                action_batch = torch.tensor([x[1] for x in batch], dtype=torch.long).unsqueeze(1)
+                reward_batch = torch.tensor([x[2] for x in batch], dtype=torch.float32)
                 next_state_batch = torch.cat([x[3] for x in batch])  # Shape: (BATCH_SIZE, C, H, W)
                 done_batch = torch.tensor([x[4] for x in batch], dtype=torch.float32)  # Shape: (BATCH_SIZE,)
 
                 # Calculate target and current Q-values
                 with torch.no_grad():
                     target_q_values = reward_batch + GAMMA * (1 - done_batch) * torch.max(dqn_model(next_state_batch), dim=1)[0]
+                    # print("Target Q Values:", target_q_values)
 
                 # Select Q-values for the specific actions taken
                 # We need to ensure action_batch matches the shape of state_batch
-                current_q_values = dqn_model(state_batch).gather(1, action_batch[:, :1]).squeeze()
+                current_q_values = dqn_model(state_batch).gather(1, action_batch).squeeze()
+                # print(f"current_q_values.requires_grad: {current_q_values.requires_grad}")
+                # print("Current Q Values:", current_q_values)
+                # print(f"Action batch: {action_batch}")
+
 
                 # Compute loss and backpropagate
                 loss = F.mse_loss(current_q_values, target_q_values)
-                print("Loss:", loss)
+                # print("Loss:", loss)
                 optimizer.zero_grad()
                 loss.backward()
+                # print(f"Loss requires grad: {loss.requires_grad}")
+
+                # print("Action batch sample:", action_batch[:5])
+                # print("State batch shape:", state_batch.shape)
+                # print("Q-values shape:", dqn_model(state_batch).shape)
+
+
+                # for name, param in dqn_model.named_parameters():
+                #     if param.grad is not None:
+                #         print(f"{name}: grad mean={param.grad.mean().item()}, max={param.grad.max().item()}")
+                #     else:
+                #         print(f"{name}: No gradient computed.")
+
+
                 optimizer.step()
             
             env.render()
