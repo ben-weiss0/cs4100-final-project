@@ -76,8 +76,8 @@ BATCH_SIZE = 64             # Size of training batches sampled from memory
 replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
 # Exploration parameters
-EPSILON_START = 0.0      # Initial exploration rate
-EPSILON_END = 0.0        # Final exploration rate
+EPSILON_START = 0.999      # Initial exploration rate
+EPSILON_END = 0.8        # Final exploration rate
 EPSILON_DECAY = 0.995     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
@@ -844,7 +844,7 @@ def train_model(episodes, render_during_training=False):
                     q_values = dqn_model(state_tensor)
                     print("Raw Q-values:", q_values)
             else:
-                action_values = [random.uniform(-1, 1), random.uniform(0, 1), max(0, random.uniform(0, 1) - 0.4)]
+                action_values = [random.uniform(-1, 1), random.uniform(0, 1), max(0, random.uniform(0, 1) - 0.7)]
             
             # Execute action in environment
             # Set the actions for the first car
@@ -934,7 +934,7 @@ if __name__=="__main__":
     TRAINING = True
     episodes_run = 0
     # Put number of traning episodes here
-    if TRAINING: train_model(1)
+    if TRAINING: train_model(10)
     # Define optimizer and loss function
     # optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
     # loss_fn = nn.MSELoss()
