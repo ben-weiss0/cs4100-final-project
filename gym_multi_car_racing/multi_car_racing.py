@@ -77,7 +77,7 @@ replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
 # Exploration parameters
 EPSILON_START = 0.999      # Initial exploration rate
-EPSILON_END = 0.8        # Final exploration rate
+EPSILON_END = 0.9        # Final exploration rate
 EPSILON_DECAY = 0.995     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
@@ -844,7 +844,7 @@ def train_model(episodes, render_during_training=False):
                     q_values = dqn_model(state_tensor)
                     print("Raw Q-values:", q_values)
             else:
-                action_values = [random.uniform(-1, 1), random.uniform(0, 1), max(0, random.uniform(0, 1) - 0.7)]
+                action_values = [random.uniform(-1, 1), random.uniform(0, 1), max(0, random.uniform(0, 1) - 0.9)]
             
             # Execute action in environment
             # Set the actions for the first car
