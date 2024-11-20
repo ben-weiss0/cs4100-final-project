@@ -76,8 +76,8 @@ BATCH_SIZE = 64             # Size of training batches sampled from memory
 replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
 # Exploration parameters
-EPSILON_START = 0.999      # Initial exploration rate
-EPSILON_END = 0.9        # Final exploration rate
+EPSILON_START = 0.0      # Initial exploration rate
+EPSILON_END = 0.0        # Final exploration rate
 EPSILON_DECAY = 0.995     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
@@ -934,7 +934,7 @@ if __name__=="__main__":
     TRAINING = True
     episodes_run = 0
     # Put number of traning episodes here
-    if TRAINING: train_model(10)
+    if TRAINING: train_model(1)
     # Define optimizer and loss function
     # optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
     # loss_fn = nn.MSELoss()
