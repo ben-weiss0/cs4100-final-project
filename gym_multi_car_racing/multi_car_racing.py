@@ -78,7 +78,7 @@ replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 # Exploration parameters
 EPSILON_START = 0.0      # Initial exploration rate
 EPSILON_END = 0.0        # Final exploration rate
-EPSILON_DECAY = 0.995     # Decay rate for exploration rate
+EPSILON_DECAY = 0.9999     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
 # Hyperparameters
