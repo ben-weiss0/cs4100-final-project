@@ -132,7 +132,6 @@ class FrictionDetector(contactListener):
             return
         if begin:
             obj.tiles.add(tile)
-            # print tile.road_friction, "ADD", len(obj.tiles)
             if not tile.road_visited[obj.car_id]:
                 tile.road_visited[obj.car_id] = True
                 self.env.tile_visited_count[obj.car_id] += 1
@@ -143,7 +142,6 @@ class FrictionDetector(contactListener):
                 self.env.reward[obj.car_id] += reward_factor * 1000.0/len(self.env.track)
         else:
             obj.tiles.remove(tile)
-            # print tile.road_friction, "DEL", len(obj.tiles) -- should delete to zero when on grass (this works)
 
 class MultiCarRacing(gym.Env, EzPickle):
     metadata = {
@@ -182,8 +180,8 @@ class MultiCarRacing(gym.Env, EzPickle):
         self.h_ratio = h_ratio  # Configures vertical location of car within rendered window
         self.use_ego_color = use_ego_color  # Whether to make ego car always render as the same color
 
-        self.action_lb = np.tile(np.array([-1,+0,+0]), 1)  # self.num_agents)
-        self.action_ub = np.tile(np.array([+1,+1,+1]), 1)  # self.num_agents)
+        self.action_lb = np.tile(np.array([-1,+0,+0]), 1)
+        self.action_ub = np.tile(np.array([+1,+1,+1]), 1)
 
         self.action_space = spaces.Box( self.action_lb, self.action_ub, dtype=np.float32)  # (steer, gas, brake) x N
         self.observation_space = spaces.Box(low=0, high=255, shape=(STATE_H, STATE_W, 3), dtype=np.uint8)
@@ -220,10 +218,6 @@ class MultiCarRacing(gym.Env, EzPickle):
                 rad = 1.5*TRACK_RAD
             checkpoints.append( (alpha, rad*math.cos(alpha), rad*math.sin(alpha)) )
 
-        # print "\n".join(str(h) for h in checkpoints)
-        # self.road_poly = [ (    # uncomment this to see checkpoints
-        #    [ (tx,ty) for a,tx,ty in checkpoints ],
-        #    (0.7,0.7,0.9) ) ]
         self.road = []
 
         # Go from one checkpoint to another to create track
@@ -280,7 +274,6 @@ class MultiCarRacing(gym.Env, EzPickle):
             no_freeze -= 1
             if no_freeze==0:
                  break
-        # print "\n".join([str(t) for t in enumerate(track)])
 
         # Find closed loop range i1..i2, first loop should be ignored, second is OK
         i1, i2 = -1, -1
@@ -414,10 +407,6 @@ class MultiCarRacing(gym.Env, EzPickle):
             # Compute offsets from position of original starting line
             new_x = pos_x + dx + (lateral_spacing * np.sin(norm_theta) * side)
             new_y = pos_y + dy + (lateral_spacing * np.cos(norm_theta) * side)
-
-            # Display spawn locations of cars.
-            # print(f"Spawning car {car_id} at {new_x:.0f}x{new_y:.0f} with "
-            #       f"orientation {angle}")
 
             # Create car at location with given angle
             self.cars[car_id] = car_dynamics.Car(self.world, angle, new_x,
@@ -555,9 +544,6 @@ class MultiCarRacing(gym.Env, EzPickle):
         if "t" not in self.__dict__: return  # reset() not called yet
 
         zoom = 0.1*SCALE*max(1-self.t, 0) + ZOOM*SCALE*min(self.t, 1)   # Animate zoom first second
-        #NOTE (ig): Following two variables seemed unused. Commented them out.
-        #zoom_state  = ZOOM*SCALE*STATE_W/WINDOW_W 
-        #zoom_video  = ZOOM*SCALE*VIDEO_W/WINDOW_W
         scroll_x = self.cars[car_id].hull.position[0]
         scroll_y = self.cars[car_id].hull.position[1]
         angle = -self.cars[car_id].hull.angle
@@ -596,7 +582,7 @@ class MultiCarRacing(gym.Env, EzPickle):
         else:
             pixel_scale = 1
             if hasattr(win.context, '_nscontext'):
-                pixel_scale = win.context._nscontext.view().backingScaleFactor()  # pylint: disable=protected-access
+                pixel_scale = win.context._nscontext.view().backingScaleFactor()
             VP_W = int(pixel_scale * WINDOW_W)
             VP_H = int(pixel_scale * WINDOW_H)
 
@@ -700,7 +686,7 @@ class DQN(nn.Module):
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
         
         # Fully connected layers
-        self.fc1 = nn.Linear(in_features=4096, out_features=512)  # Updated to 4096 based on calculation
+        self.fc1 = nn.Linear(in_features=4096, out_features=512)  # 4096 input pixels
         self.fc2 = nn.Linear(in_features=512, out_features=3)     # Output 3 actions
 
         # Activation function
@@ -724,52 +710,7 @@ class DQN(nn.Module):
         return torch.stack([steer, gas, brake], dim=1)
 
 # Define the model with appropriate input channels (3 for RGB) and output (3 actions for steer, gas, brake)
-dqn_model = DQN(input=3)  # Adjust input and output if necessary
-
-# Both will need this to run the game
-# Put here purely to reduce duplicate code
-def render(should_render):
-    NUM_CARS = 2
-    # Specify key controls for cars
-    CAR_CONTROL_KEYS = [[key.LEFT, key.RIGHT, key.UP, key.DOWN],
-                        [key.A, key.D, key.W, key.S]]
-
-    a = np.zeros((NUM_CARS, 3))
-
-    # Determines what to do on key presses
-    def key_press(k, mod):
-        global restart, stopped, CAR_CONTROL_KEYS
-        if k==0xff1b: stopped = True # Terminate on esc.
-        if k==0xff0d: restart = True # Restart on Enter.
-
-        # Iterate through cars and assign them control keys (mod num controllers)
-        for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]:  a[i][0] = -1.0
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1]: a[i][0] = +1.0
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = +1.0
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = +0.8
-
-    def key_release(k, mod):
-        global CAR_CONTROL_KEYS
-        for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]  and a[i][0]==-1.0: a[i][0] = 0
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1] and a[i][0]==+1.0: a[i][0] = 0
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = 0
-            if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = 0
-
-    env = MultiCarRacing(NUM_CARS)
-    # Only render if this is true
-    env.render()
-    for viewer in env.viewer:
-        viewer.window.on_key_press = key_press
-        viewer.window.on_key_release = key_release
-    record_video = False
-    if record_video:
-        from gym.wrappers.monitor import Monitor
-        env = Monitor(env, '/tmp/video-test', force=True)
-
-# Initialize or load the DQN model
-dqn_model = DQN(input=3)
+dqn_model = DQN(input=3) 
 optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
 loss_fn = nn.MSELoss()
 
@@ -811,7 +752,6 @@ def train_model(episodes, render_during_training=False):
             if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = 0
 
     env = MultiCarRacing(NUM_CARS)
-    # Only render if this is true
     env.render()
     for viewer in env.viewer:
         viewer.window.on_key_press = key_press
@@ -821,11 +761,8 @@ def train_model(episodes, render_during_training=False):
         from gym.wrappers.monitor import Monitor
         env = Monitor(env, '/tmp/video-test', force=True)
     ###############################
-    # env = MultiCarRacing(2)  # Initialize environment with 2 cars
     epsilon = EPSILON_START  # Reset epsilon each training
     load_model()  # Load model if existing weights file found
-    # a = np.zeros((2, 3))
-    # render(True)
     
     # Main training loop
     for episode in range(episodes):
@@ -850,12 +787,10 @@ def train_model(episodes, render_during_training=False):
             # Set the actions for the first car
             a[0] = action_values
             print(action_values)
-            
 
             # Pass `a` (with the first car’s actions set) to `env.step()`
             next_state, reward, done, _ = env.step(a)
             total_reward += reward[0]
-            # print(reward[0])
 
             # Prepare tensors for training
             next_state_tensor = torch.tensor(next_state[0], dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
@@ -882,35 +817,15 @@ def train_model(episodes, render_during_training=False):
                 # Calculate target and current Q-values
                 with torch.no_grad():
                     target_q_values = reward_batch + GAMMA * (1 - done_batch) * torch.max(dqn_model(next_state_batch), dim=1)[0]
-                    # print("Target Q Values:", target_q_values)
 
                 # Select Q-values for the specific actions taken
                 # We need to ensure action_batch matches the shape of state_batch
                 current_q_values = dqn_model(state_batch).gather(1, action_batch).squeeze()
-                # print(f"current_q_values.requires_grad: {current_q_values.requires_grad}")
-                # print("Current Q Values:", current_q_values)
-                # print(f"Action batch: {action_batch}")
-
 
                 # Compute loss and backpropagate
                 loss = F.mse_loss(current_q_values, target_q_values)
-                # print("Loss:", loss)
                 optimizer.zero_grad()
                 loss.backward()
-                # print(f"Loss requires grad: {loss.requires_grad}")
-
-                # print("Action batch sample:", action_batch[:5])
-                # print("State batch shape:", state_batch.shape)
-                # print("Q-values shape:", dqn_model(state_batch).shape)
-
-
-                # for name, param in dqn_model.named_parameters():
-                #     if param.grad is not None:
-                #         print(f"{name}: grad mean={param.grad.mean().item()}, max={param.grad.max().item()}")
-                #     else:
-                #         print(f"{name}: No gradient computed.")
-
-
                 optimizer.step()
             
             env.render()
@@ -931,89 +846,6 @@ def train_model(episodes, render_during_training=False):
 
 # Main function that runs either training model or tries to win
 if __name__=="__main__":
-    TRAINING = True
-    episodes_run = 0
     # Put number of traning episodes here
-    if TRAINING: train_model(10)
-    # Define optimizer and loss function
-    # optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
-    # loss_fn = nn.MSELoss()
-    # NUM_CARS = 2  # Supports key control of two cars, but can simulate as many as needed
+    train_model(10)
 
-    # # Specify key controls for cars
-    # CAR_CONTROL_KEYS = [[key.LEFT, key.RIGHT, key.UP, key.DOWN],
-    #                     [key.A, key.D, key.W, key.S]]
-
-    # a = np.zeros((NUM_CARS, 3))
-
-    # # Determines what to do on key presses
-    # def key_press(k, mod):
-    #     global restart, stopped, CAR_CONTROL_KEYS
-    #     if k==0xff1b: stopped = True # Terminate on esc.
-    #     if k==0xff0d: restart = True # Restart on Enter.
-
-    #     # Iterate through cars and assign them control keys (mod num controllers)
-    #     for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
-    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]:  a[i][0] = -1.0
-    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1]: a[i][0] = +1.0
-    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = +1.0
-    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = +0.8
-
-    # def key_release(k, mod):
-    #     global CAR_CONTROL_KEYS
-    #     for i in range(min(len(CAR_CONTROL_KEYS), NUM_CARS)):
-    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][0]  and a[i][0]==-1.0: a[i][0] = 0
-    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][1] and a[i][0]==+1.0: a[i][0] = 0
-    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][2]:    a[i][1] = 0
-    #         if k==CAR_CONTROL_KEYS[i % len(CAR_CONTROL_KEYS)][3]:  a[i][2] = 0
-
-    # env = MultiCarRacing(NUM_CARS)
-    # env.render()
-    # for viewer in env.viewer:
-    #     viewer.window.on_key_press = key_press
-    #     viewer.window.on_key_release = key_release
-    # record_video = False
-    # if record_video:
-    #     from gym.wrappers.monitor import Monitor
-    #     env = Monitor(env, '/tmp/video-test', force=True)
-    # for episode in range(REPLAY_MEMORY_SIZE):
-    #     isopen = True
-    #     stopped = False
-    #     while isopen and not stopped:
-    #         env.reset()
-    #         total_reward = np.zeros(NUM_CARS)
-    #         steps = 0
-    #         restart = False
-    #         while True:
-    #             s, r, done, info = env.step(a)
-    #             learning_state = env.state[0]  # Use car 0's state
-    #             state_tensor = torch.tensor(learning_state, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
-            
-    #             with torch.no_grad():
-    #                 # Case we use best value
-    #                 if random.random() > epsilon:
-    #                     action_values = dqn_model(state_tensor).squeeze(0).cpu().tolist()
-    #                 # Case we do something completely random
-    #                 else:
-    #                     action_values = [random.uniform(-1, 1), random.uniform(0, 1), random.uniform(0, 1)]
-
-    #             # Decay epsilon if not at determined minimum
-    #             if epsilon > EPSILON_END:
-    #                 epsilon *= EPSILON_DECAY
-
-    #             # Define a mapping for the DQN action outputs to [steer, gas, brake] values
-    #             a[0] = action_values
-            
-    #             # Process the chosen action
-    #             total_reward += r
-    #             if total_reward[0] < LOW_REWARD_THRESHOLD:
-    #                 restart = True 
-    #                 break
-    #             if steps % 200 == 0 or done:
-    #                 print("\nActions: " + str.join(" ", [f"Car {x}: "+str(a[x]) for x in range(NUM_CARS)]))
-    #                 print(f"Step {steps} Total_reward "+str(total_reward))
-    #             steps += 1
-    #             isopen = env.render().all()
-    #             if stopped or done or restart or isopen == False:
-    #                 break
-    #     env.close()
