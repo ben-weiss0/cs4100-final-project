@@ -76,15 +76,15 @@ BATCH_SIZE = 64             # Size of training batches sampled from memory
 replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
 # Exploration parameters
-EPSILON_START = 0.0      # Initial exploration rate
-EPSILON_END = 0.0        # Final exploration rate
+EPSILON_START = 0.7      # Initial exploration rate
+EPSILON_END = 0.5        # Final exploration rate
 EPSILON_DECAY = 0.9999     # Decay rate for exploration rate
 epsilon = EPSILON_START
 
 # Hyperparameters
 GAMMA = 0.9                 # Discount factor for future rewards
 LEARNING_RATE = 1e-4         # Learning rate for optimizer
-LOW_REWARD_THRESHOLD = -5
+LOW_REWARD_THRESHOLD = -10
 
 # Specify different car colors
 CAR_COLORS = [(0.8, 0.0, 0.0), (0.0, 0.0, 0.8),
@@ -934,7 +934,7 @@ if __name__=="__main__":
     TRAINING = True
     episodes_run = 0
     # Put number of traning episodes here
-    if TRAINING: train_model(1)
+    if TRAINING: train_model(10)
     # Define optimizer and loss function
     # optimizer = optim.Adam(dqn_model.parameters(), lr=LEARNING_RATE)
     # loss_fn = nn.MSELoss()
