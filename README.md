@@ -29,7 +29,7 @@ Note: First, follow the instructions from the provided repository to meet the ma
 
 Unfortunately, this makes it hard to provide robust instructions, however, we can tell you what versions one of our laptops had to aid troubleshooting as best possible.
 
-Here are the results of running 'pip freeze' on Ben's laptop:
+Here are the results of running 'pip freeze' on Ben's laptop (which was running a Conda environment with Python 3.9.20):
 
 box2d-py==2.3.8
 cloudpickle==1.6.0
