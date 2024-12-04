@@ -19,6 +19,8 @@ import random
 import torch.optim as optim
 from pyglet.window import key
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import csv
 
 
 # Easiest continuous control task to learn from pixels, a top-down racing environment.
@@ -99,6 +101,26 @@ LATERAL_SPACING = 3  # Starting side distance between pairs of cars
 # Penalizing backwards driving
 BACKWARD_THRESHOLD = np.pi/2
 K_BACKWARD = 0  # Penalty weight: backwards_penalty = K_BACKWARD * angle_diff  (if angle_diff > BACKWARD_THRESHOLD)
+
+# Store rewards per episode
+all_rewards = []
+# Store loss values during training
+all_losses = []
+
+# Load existing data
+try:
+    with open("rewards.csv", "r") as rewards_file:
+        reader = csv.reader(rewards_file)
+        all_rewards = [float(item) for row in reader for item in row]  # Flatten the rows
+except FileNotFoundError:
+    all_rewards = []
+
+try:
+    with open("losses.csv", "r") as losses_file:
+        reader = csv.reader(losses_file)
+        all_losses = [float(item) for row in reader for item in row]
+except FileNotFoundError:
+    all_losses = []
 
 class FrictionDetector(contactListener):
     def __init__(self, env):
@@ -769,6 +791,7 @@ def train_model(episodes, render_during_training=False):
         state = env.reset()
         state_tensor = torch.tensor(state[0], dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)  # Car 0 state
         total_reward = 0
+        episode_losses = []
         done = False
         steps = 0
         global restart
@@ -827,6 +850,7 @@ def train_model(episodes, render_during_training=False):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                episode_losses.append(loss.item())
             
             env.render()
             
@@ -834,10 +858,22 @@ def train_model(episodes, render_during_training=False):
             epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
             steps += 1
 
+        # Store rewards and average loss
+        all_rewards.append(total_reward)
+        all_losses.append(sum(episode_losses) / len(episode_losses))
+
         # Save model periodically
         if episode % 2 == 0:
             torch.save(dqn_model.state_dict(), 'racing_dqn_network.pth')
             print(f"Model saved at episode {episode}")
+
+            with open("rewards.csv", "w") as rewards_file:
+                writer = csv.writer(rewards_file)
+                writer.writerow(all_rewards)
+
+            with open("losses.csv", "w") as losses_file:
+                writer = csv.writer(losses_file)
+                writer.writerow(all_losses)
 
     print("Training complete")
     torch.save(dqn_model.state_dict(), 'racing_dqn_network.pth')
@@ -847,5 +883,45 @@ def train_model(episodes, render_during_training=False):
 # Main function that runs either training model or tries to win
 if __name__=="__main__":
     # Put number of traning episodes here
-    train_model(10)
+    train_model(50)
 
+# Save updated data
+with open("rewards.csv", "w") as rewards_file:
+    writer = csv.writer(rewards_file)
+    writer.writerow(all_rewards)
+
+with open("losses.csv", "w") as losses_file:
+    writer = csv.writer(losses_file)
+    writer.writerow(all_losses)
+
+# Define a moving average function
+def moving_average(data, window_size=10):
+    return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
+
+# Calculate the moving average for rewards
+reward_trend = moving_average(all_rewards, window_size=100)
+
+# Plot Rewards
+plt.figure(figsize=(10, 5))
+plt.plot(all_rewards, label="Episode Rewards (Cumulative)", alpha=0.6)
+plt.plot(range(len(reward_trend)), reward_trend, label="Reward Trend (Moving Average)", color='red', linewidth=2)
+plt.xlabel("Episode")
+plt.ylabel("Total Reward")
+plt.title("Training Rewards Over Episodes")
+plt.legend()
+plt.grid()
+plt.show()
+
+# Calculate the moving average for losses
+loss_trend = moving_average(all_losses, window_size=100)
+
+# Plot Losses
+plt.figure(figsize=(10, 5))
+plt.plot(all_losses, label="Training Loss (Cumulative)", alpha=0.6)
+plt.plot(range(len(loss_trend)), loss_trend, label="Loss Trend (Moving Average)", color='red', linewidth=2)
+plt.xlabel("Training Step")
+plt.ylabel("Loss")
+plt.title("Training Loss Over Time")
+plt.legend()
+plt.grid()
+plt.show()
